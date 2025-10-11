@@ -9,8 +9,12 @@ import {
   HttpStatus,
   HttpCode,
   Query,
-  Put
+  Put,
+  Res,
+  StreamableFile
 } from '@nestjs/common';
+import { Response } from 'express';
+import axios from 'axios';
 import { RobotsService } from './robots.service';
 import { CreateRobotDto } from './dto/create-robot.dto';
 import { UpdateRobotDto } from './dto/update-robot.dto';
@@ -116,5 +120,89 @@ export class RobotsController {
         uptime: isHealthy ? new Date().getTime() - new Date(robot.lastSeen).getTime() : 0
       }
     };
+  }
+
+  @Get(':id/camera/test')
+  async testCameraUrl(@Param('id') id: string) {
+    const robot = await this.robotsService.findOne(id);
+    if (!robot) {
+      return { success: false, message: 'Robot not found' };
+    }
+    const cameraUrl = `http://${robot.ipAddress}:8080/stream?topic=/usb_cam/image_raw`;
+    return {
+      success: true,
+      cameraUrl,
+      robotIp: robot.ipAddress,
+      robotName: robot.name
+    };
+  }
+
+  @Get(':id/camera')
+  async getCameraStream(@Param('id') id: string, @Res() res: Response) {
+    const robot = await this.robotsService.findOne(id);
+
+    if (!robot) {
+      console.log('Robot not found:', id);
+      return res.status(404).json({ success: false, message: 'Robot not found' });
+    }
+
+    // web_video_server URL
+    const cameraUrl = `http://${robot.ipAddress}:8080/stream?topic=/usb_cam/image_raw`;
+    console.log('Attempting to connect to camera:', cameraUrl);
+
+    try {
+      // Use axios with streaming and no timeout
+      const response = await axios.get(cameraUrl, {
+        responseType: 'stream',
+        timeout: 0, // No timeout for streaming
+        headers: {
+          'Connection': 'keep-alive'
+        }
+      });
+
+      console.log('Camera connection successful, streaming...');
+      console.log('Original Content-Type:', response.headers['content-type']);
+
+      // Forward the exact Content-Type from the source (including boundary)
+      const contentType = response.headers['content-type'] || 'multipart/x-mixed-replace; boundary=frame';
+
+      // Set headers - use the original content type to preserve boundary
+      res.setHeader('Content-Type', contentType);
+      res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+      res.setHeader('Pragma', 'no-cache');
+      res.setHeader('Expires', '0');
+      res.setHeader('Connection', 'keep-alive');
+
+      // Handle client disconnect
+      res.on('close', () => {
+        console.log('Client disconnected from camera stream');
+        response.data.destroy();
+      });
+
+      // Handle stream errors
+      response.data.on('error', (err) => {
+        console.error('Stream error:', err.message);
+        if (!res.headersSent) {
+          res.status(500).end();
+        }
+      });
+
+      // Pipe the camera stream to the response
+      response.data.pipe(res);
+
+    } catch (error) {
+      console.error('Camera stream error:', error.message);
+      if (error.response) {
+        console.error('Response status:', error.response.status);
+      }
+      if (!res.headersSent) {
+        return res.status(500).json({
+          success: false,
+          message: 'Failed to connect to camera stream',
+          error: error.message,
+          cameraUrl
+        });
+      }
+    }
   }
 }

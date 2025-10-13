@@ -58,6 +58,9 @@ export class Robot {
 
   @Prop({ type: Object, default: {} })
   metadata: Record<string, any>;
+
+  @Prop({ type: Number, default: 0 })
+  batteryVoltage?: number;
 }
 
 export const RobotSchema = SchemaFactory.createForClass(Robot);

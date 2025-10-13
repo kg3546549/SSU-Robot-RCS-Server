@@ -9,6 +9,7 @@ export interface Robot {
   lastSeen: Date;
   capabilities: RobotCapability[];
   metadata: Record<string, any>;
+  batteryVoltage?: number;
 }
 
 export interface RobotCapability {

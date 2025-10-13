@@ -119,6 +119,23 @@ export class RobotControlGateway implements OnGatewayConnection, OnGatewayDiscon
       const connected = await this.robotConnectionService.connectToRobot(robotId, rosUrl);
 
       if (connected) {
+        // Subscribe to battery voltage topic
+        this.robotConnectionService.subscribeToBatteryVoltage(robotId, async (voltage) => {
+          // Broadcast battery voltage to all clients
+          this.server.emit('robot:batteryVoltage', {
+            robotId,
+            voltage,
+            timestamp: new Date().toISOString(),
+          });
+
+          // Update database with battery voltage
+          try {
+            await this.robotsService.updateBatteryVoltage(robotId, voltage);
+          } catch (error) {
+            this.logger.error(`Failed to update battery voltage for robot ${robotId}:`, error);
+          }
+        });
+
         client.emit('robot:connected', {
           robotId,
           message: `Connected to robot ${robot.name}`,
@@ -187,7 +204,7 @@ export class RobotControlGateway implements OnGatewayConnection, OnGatewayDiscon
     const MAX_LINEAR_SPEED = 1.0;
 
     const twist = {
-      linear: { x: y * MAX_LINEAR_SPEED, y: x * MAX_LINEAR_SPEED, z: 0 },
+      linear: { x: y * MAX_LINEAR_SPEED, y: -x * MAX_LINEAR_SPEED, z: 0 },
       angular: { x: 0, y: 0, z: 0 },
     };
 

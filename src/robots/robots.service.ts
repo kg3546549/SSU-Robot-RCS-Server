@@ -152,4 +152,20 @@ export class RobotsService {
       .exec();
     return robots.map(robot => robot.toObject() as Robot);
   }
+
+  async updateBatteryVoltage(id: string, voltage: number): Promise<Robot> {
+    const updatedRobot = await this.robotModel
+      .findOneAndUpdate(
+        { id },
+        { batteryVoltage: voltage, lastSeen: new Date() },
+        { new: true }
+      )
+      .exec();
+
+    if (!updatedRobot) {
+      throw new NotFoundException(`Robot with ID ${id} not found`);
+    }
+
+    return updatedRobot.toObject() as Robot;
+  }
 }

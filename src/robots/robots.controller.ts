@@ -148,7 +148,7 @@ export class RobotsController {
 
     // web_video_server URL
     const cameraUrl = `http://${robot.ipAddress}:8080/stream?topic=/usb_cam/image_raw`;
-    console.log('Attempting to connect to camera:', cameraUrl);
+    // console.log('Attempting to connect to camera:', cameraUrl); // 로그 제거 - 너무 자주 발생
 
     try {
       // Use axios with streaming and no timeout
@@ -160,8 +160,8 @@ export class RobotsController {
         }
       });
 
-      console.log('Camera connection successful, streaming...');
-      console.log('Original Content-Type:', response.headers['content-type']);
+      // console.log('Camera connection successful, streaming...'); // 로그 제거
+      // console.log('Original Content-Type:', response.headers['content-type']); // 로그 제거
 
       // Forward the exact Content-Type from the source (including boundary)
       const contentType = response.headers['content-type'] || 'multipart/x-mixed-replace; boundary=frame';
@@ -175,7 +175,7 @@ export class RobotsController {
 
       // Handle client disconnect
       res.on('close', () => {
-        console.log('Client disconnected from camera stream');
+        // console.log('Client disconnected from camera stream'); // 로그 제거
         response.data.destroy();
       });
 

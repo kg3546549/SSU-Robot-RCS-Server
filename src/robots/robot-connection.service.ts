@@ -6,6 +6,7 @@ interface RobotConnection {
   topics: Map<string, ROSLIB.Topic>;
   isConnected: boolean;
   lastSeen: Date;
+  batteryVoltage?: number;
 }
 
 @Injectable()
@@ -228,11 +229,59 @@ export class RobotConnectionService {
   /**
    * Get connection status
    */
-  getConnectionStatus(robotId: string): { isConnected: boolean; lastSeen?: Date } {
+  getConnectionStatus(robotId: string): { isConnected: boolean; lastSeen?: Date; batteryVoltage?: number } {
     const connection = this.connections.get(robotId);
     return {
       isConnected: connection?.isConnected || false,
       lastSeen: connection?.lastSeen,
+      batteryVoltage: connection?.batteryVoltage,
     };
+  }
+
+  /**
+   * Subscribe to battery voltage topic
+   */
+  subscribeToBatteryVoltage(robotId: string, callback?: (voltage: number) => void): void {
+    const connection = this.connections.get(robotId);
+    if (!connection || !connection.isConnected) {
+      this.logger.warn(`Robot ${robotId} is not connected`);
+      return;
+    }
+
+    // Check if already subscribed
+    if (connection.topics.has('voltage')) {
+      this.logger.log(`Already subscribed to voltage topic for robot ${robotId}`);
+      return;
+    }
+
+    const voltageTopic = new ROSLIB.Topic({
+      ros: connection.ros,
+      name: '/voltage',
+      messageType: 'std_msgs/Float32',
+    });
+
+    voltageTopic.subscribe((message: any) => {
+      const voltage = message.data;
+      connection.batteryVoltage = voltage;
+      connection.lastSeen = new Date();
+
+      // 로그 제거 - 너무 자주 발생
+      // this.logger.debug(`Robot ${robotId} battery voltage: ${voltage}V`);
+
+      if (callback) {
+        callback(voltage);
+      }
+    });
+
+    connection.topics.set('voltage', voltageTopic);
+    this.logger.log(`Subscribed to voltage topic for robot ${robotId}`);
+  }
+
+  /**
+   * Get battery voltage
+   */
+  getBatteryVoltage(robotId: string): number | undefined {
+    const connection = this.connections.get(robotId);
+    return connection?.batteryVoltage;
   }
 }

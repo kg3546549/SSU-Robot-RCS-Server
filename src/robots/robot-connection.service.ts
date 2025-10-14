@@ -177,6 +177,84 @@ export class RobotConnectionService {
   }
 
   /**
+   * Call CurrentAngle service to get current arm joint angles
+   */
+  async getCurrentArmAngles(robotId: string): Promise<number[]> {
+    const connection = this.connections.get(robotId);
+    if (!connection || !connection.isConnected) {
+      throw new Error(`Robot ${robotId} is not connected`);
+    }
+
+    return new Promise((resolve, reject) => {
+      const service = new ROSLIB.Service({
+        ros: connection.ros,
+        name: '/CurrentAngle',
+        serviceType: 'yahboomcar_msgs/RobotArmArray',
+      });
+
+      const request = new ROSLIB.ServiceRequest({
+        apply: '',
+      });
+
+      service.callService(
+        request,
+        (result: any) => {
+          try {
+            const angles = result.angles || [];
+            connection.lastSeen = new Date();
+            this.logger.log(`Got current arm angles for robot ${robotId}: [${angles.join(', ')}]`);
+            resolve(angles);
+          } catch (error) {
+            reject(error);
+          }
+        },
+        (error: any) => {
+          this.logger.error(`Failed to get current arm angles for robot ${robotId}:`, error);
+          reject(error);
+        },
+      );
+    });
+  }
+
+  /**
+   * Subscribe to arm angle update topic
+   */
+  subscribeToArmAngleUpdate(robotId: string, callback?: (angles: number[]) => void): void {
+    const connection = this.connections.get(robotId);
+    if (!connection || !connection.isConnected) {
+      this.logger.warn(`Robot ${robotId} is not connected`);
+      return;
+    }
+
+    // Check if already subscribed
+    if (connection.topics.has('/ArmAngleUpdate')) {
+      this.logger.log(`Already subscribed to /ArmAngleUpdate topic for robot ${robotId}`);
+      return;
+    }
+
+    const armUpdateTopic = new ROSLIB.Topic({
+      ros: connection.ros,
+      name: '/ArmAngleUpdate',
+      messageType: 'yahboomcar_msgs/ArmJoint',
+    });
+
+    armUpdateTopic.subscribe((message: any) => {
+      // ArmJoint 메시지에서 joints 배열 추출
+      const joints = message.joints || [];
+      connection.lastSeen = new Date();
+
+      this.logger.debug(`Robot ${robotId} arm update: [${joints.join(', ')}]`);
+
+      if (callback && joints.length > 0) {
+        callback(joints);
+      }
+    });
+
+    connection.topics.set('/ArmAngleUpdate', armUpdateTopic);
+    this.logger.log(`Subscribed to /ArmAngleUpdate topic for robot ${robotId}`);
+  }
+
+  /**
    * Subscribe to a topic on robot
    */
   subscribeToTopic(
@@ -283,5 +361,50 @@ export class RobotConnectionService {
   getBatteryVoltage(robotId: string): number | undefined {
     const connection = this.connections.get(robotId);
     return connection?.batteryVoltage;
+  }
+
+  /**
+   * Publish arm control command to /TargetAngle topic
+   */
+  publishArmControl(
+    robotId: string,
+    armCommand: {
+      id: number;
+      runTime: number;
+      angle: number;
+      joints: number[];
+    },
+  ): void {
+    const connection = this.connections.get(robotId);
+    if (!connection || !connection.isConnected) {
+      this.logger.warn(`Robot ${robotId} is not connected`);
+      return;
+    }
+
+    let armTopic = connection.topics.get('/TargetAngle');
+
+    if (!armTopic) {
+      armTopic = new ROSLIB.Topic({
+        ros: connection.ros,
+        name: '/TargetAngle',
+        messageType: 'yahboomcar_msgs/ArmJoint',
+      });
+      connection.topics.set('/TargetAngle', armTopic);
+    }
+
+    const message = new ROSLIB.Message({
+      id: armCommand.id,
+      run_time: armCommand.runTime,
+      angle: armCommand.angle,
+      joints: armCommand.joints,
+    });
+
+    armTopic.publish(message);
+    connection.lastSeen = new Date();
+
+    this.logger.log(
+      `Published arm control for robot ${robotId}: id=${armCommand.id}, ` +
+      `joints=[${armCommand.joints.join(', ')}], runTime=${armCommand.runTime}ms`,
+    );
   }
 }

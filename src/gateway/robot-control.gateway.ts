@@ -40,6 +40,14 @@ interface SetModePayload {
   speed?: number;
 }
 
+interface ArmControlPayload {
+  robotId: string;
+  joints: number[];
+  id?: number;
+  angle?: number;
+  runTime: number;
+}
+
 interface ConnectRobotPayload {
   robotId: string;
 }
@@ -135,6 +143,27 @@ export class RobotControlGateway implements OnGatewayConnection, OnGatewayDiscon
             this.logger.error(`Failed to update battery voltage for robot ${robotId}:`, error);
           }
         });
+
+        // Subscribe to arm angle updates
+        this.robotConnectionService.subscribeToArmAngleUpdate(robotId, (angles) => {
+          // Broadcast arm angle updates to all clients
+          this.server.emit('robot:armAngleUpdate', {
+            robotId,
+            angles,
+            timestamp: new Date().toISOString(),
+          });
+        });
+
+        // Get current arm angles
+        try {
+          const currentAngles = await this.robotConnectionService.getCurrentArmAngles(robotId);
+          client.emit('robot:currentArmAngles', {
+            robotId,
+            angles: currentAngles,
+          });
+        } catch (error) {
+          this.logger.warn(`Failed to get current arm angles for robot ${robotId}:`, error);
+        }
 
         client.emit('robot:connected', {
           robotId,
@@ -466,6 +495,61 @@ export class RobotControlGateway implements OnGatewayConnection, OnGatewayDiscon
     } catch (error) {
       this.logger.error(`Error getting mode list for robot ${robotId}:`, error);
       client.emit('robot:error', {
+        robotId,
+        error: error.message,
+      });
+    }
+  }
+
+  /**
+   * Handle robot arm control
+   */
+  @SubscribeMessage('robot:armControl')
+  handleArmControl(@MessageBody() payload: ArmControlPayload) {
+    const { robotId, joints, id, angle, runTime } = payload;
+
+    if (!this.robotConnectionService.isRobotConnected(robotId)) {
+      this.server.emit('robot:error', {
+        robotId,
+        error: 'Robot not connected',
+      });
+      return;
+    }
+
+    try {
+      // 전체 관절 제어 또는 개별 서보 제어
+      if (joints && joints.length === 6) {
+        // 전체 관절 제어
+        this.robotConnectionService.publishArmControl(robotId, {
+          id: 0,
+          runTime,
+          angle: 0.0,
+          joints,
+        });
+
+        this.server.emit('robot:log', {
+          robotId,
+          message: `Arm control: all joints [${joints.join(', ')}], time=${runTime}ms`,
+          timestamp: new Date().toISOString(),
+        });
+      } else if (id !== undefined && angle !== undefined) {
+        // 개별 서보 제어
+        this.robotConnectionService.publishArmControl(robotId, {
+          id,
+          runTime,
+          angle,
+          joints: [],
+        });
+
+        this.server.emit('robot:log', {
+          robotId,
+          message: `Arm control: servo ${id} to ${angle}°, time=${runTime}ms`,
+          timestamp: new Date().toISOString(),
+        });
+      }
+    } catch (error) {
+      this.logger.error(`Error controlling arm for robot ${robotId}:`, error);
+      this.server.emit('robot:error', {
         robotId,
         error: error.message,
       });

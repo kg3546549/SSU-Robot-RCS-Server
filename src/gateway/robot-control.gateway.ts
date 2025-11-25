@@ -67,7 +67,7 @@ export class RobotControlGateway implements OnGatewayConnection, OnGatewayDiscon
   constructor(
     private readonly robotConnectionService: RobotConnectionService,
     private readonly robotsService: RobotsService,
-  ) {}
+  ) { }
 
   handleConnection(client: Socket) {
     this.logger.log(`Client connected: ${client.id}`);
@@ -98,9 +98,6 @@ export class RobotControlGateway implements OnGatewayConnection, OnGatewayDiscon
         return;
       }
 
-      // Build ROSBridge URL
-      const rosUrl = `ws://${robot.ipAddress}:${robot.port}`;
-
       // Register callback for connection status changes
       this.robotConnectionService.onConnectionStatusChange(robotId, async (status) => {
         if (status === 'disconnected' || status === 'error') {
@@ -124,67 +121,70 @@ export class RobotControlGateway implements OnGatewayConnection, OnGatewayDiscon
       });
 
       // Connect to robot
-      const connected = await this.robotConnectionService.connectToRobot(robotId, rosUrl);
+      await this.robotConnectionService.connectToRobot(robotId, robot.ipAddress, robot.port);
 
-      if (connected) {
-        // Subscribe to battery voltage topic
-        this.robotConnectionService.subscribeToBatteryVoltage(robotId, async (voltage) => {
-          // Broadcast battery voltage to all clients
-          this.server.emit('robot:batteryVoltage', {
-            robotId,
-            voltage,
-            timestamp: new Date().toISOString(),
-          });
-
-          // Update database with battery voltage
-          try {
-            await this.robotsService.updateBatteryVoltage(robotId, voltage);
-          } catch (error) {
-            this.logger.error(`Failed to update battery voltage for robot ${robotId}:`, error);
-          }
-        });
-
-        // Subscribe to arm angle updates
-        this.robotConnectionService.subscribeToArmAngleUpdate(robotId, (angles) => {
-          // Broadcast arm angle updates to all clients
-          this.server.emit('robot:armAngleUpdate', {
-            robotId,
-            angles,
-            timestamp: new Date().toISOString(),
-          });
-        });
-
-        // Get current arm angles
-        try {
-          const currentAngles = await this.robotConnectionService.getCurrentArmAngles(robotId);
-          client.emit('robot:currentArmAngles', {
-            robotId,
-            angles: currentAngles,
-          });
-        } catch (error) {
-          this.logger.warn(`Failed to get current arm angles for robot ${robotId}:`, error);
-        }
-
-        client.emit('robot:connected', {
+      // Subscribe to battery voltage topic
+      this.robotConnectionService.subscribeToBatteryVoltage(robotId, async (voltage) => {
+        // Broadcast battery voltage to all clients
+        this.server.emit('robot:batteryVoltage', {
           robotId,
-          message: `Connected to robot ${robot.name}`,
-        });
-
-        // Update robot status to online
-        await this.robotsService.updateStatus(robotId, 'online');
-
-        // Broadcast status change to all clients
-        this.server.emit('robot:statusChanged', {
-          robotId,
-          status: 'online',
+          voltage,
           timestamp: new Date().toISOString(),
         });
-      } else {
-        client.emit('robot:error', {
+
+        // Update database with battery voltage
+        try {
+          await this.robotsService.updateBatteryVoltage(robotId, voltage);
+        } catch (error) {
+          this.logger.error(`Failed to update battery voltage for robot ${robotId}:`, error);
+        }
+      });
+
+      // Subscribe to arm angle updates
+      this.robotConnectionService.subscribeToArmAngleUpdate(robotId, (angles) => {
+        // Broadcast arm angle updates to all clients
+        this.server.emit('robot:armAngleUpdate', {
           robotId,
-          error: 'Failed to connect to robot',
+          angles,
+          timestamp: new Date().toISOString(),
         });
+      });
+
+      // Subscribe to laser scan
+      this.robotConnectionService.subscribeToLaserScan(robotId, (scanData) => {
+        // Relay scan data to all clients
+        this.server.emit('robot:scanData', {
+          robotId,
+          scan: scanData,
+          timestamp: new Date().toISOString(),
+        });
+      });
+
+      // Get current arm angles
+      try {
+        const currentAngles = await this.robotConnectionService.getCurrentArmAngles(robotId);
+        client.emit('robot:currentArmAngles', {
+          robotId,
+          angles: currentAngles,
+        });
+      } catch (error) {
+        this.logger.warn(`Failed to get current arm angles for robot ${robotId}:`, error);
       }
+
+      client.emit('robot:connected', {
+        robotId,
+        message: `Connected to robot ${robot.name}`,
+      });
+
+      // Update robot status to online
+      await this.robotsService.updateStatus(robotId, 'online');
+
+      // Broadcast status change to all clients
+      this.server.emit('robot:statusChanged', {
+        robotId,
+        status: 'online',
+        timestamp: new Date().toISOString(),
+      });
     } catch (error) {
       this.logger.error(`Error connecting to robot ${robotId}:`, error);
       client.emit('robot:error', {
@@ -464,46 +464,6 @@ export class RobotControlGateway implements OnGatewayConnection, OnGatewayDiscon
     }
   }
 
-  /**
-   * Get mode list
-   */
-  @SubscribeMessage('robot:getModeList')
-  async handleGetModeList(
-    @MessageBody() payload: { robotId: string },
-    @ConnectedSocket() client: Socket,
-  ) {
-    const { robotId } = payload;
-
-    if (!this.robotConnectionService.isRobotConnected(robotId)) {
-      client.emit('robot:error', {
-        robotId,
-        error: 'Robot not connected',
-      });
-      return;
-    }
-
-    try {
-      const response = await this.robotConnectionService.callModeService(
-        robotId,
-        'list',
-      );
-
-      client.emit('robot:modeList', {
-        robotId,
-        modes: response.modes,
-      });
-    } catch (error) {
-      this.logger.error(`Error getting mode list for robot ${robotId}:`, error);
-      client.emit('robot:error', {
-        robotId,
-        error: error.message,
-      });
-    }
-  }
-
-  /**
-   * Handle robot arm control
-   */
   @SubscribeMessage('robot:armControl')
   handleArmControl(@MessageBody() payload: ArmControlPayload) {
     const { robotId, joints, id, angle, runTime } = payload;

@@ -25,17 +25,21 @@ export class RobotConnectionService {
   /**
    * Connect to a robot's ROSBridge
    */
-  async connectToRobot(robotId: string, rosUrl: string): Promise<boolean> {
+  async connectToRobot(robotId: string, ip: string, port: number): Promise<void> {
+    // If already connected to this robot, do nothing
     if (this.connections.has(robotId)) {
-      this.logger.warn(`Robot ${robotId} is already connected`);
-      return true;
+      this.logger.log(`[RobotConnection] Already connected to robot ${robotId}`);
+      return;
     }
 
-    return new Promise((resolve) => {
+    const rosUrl = `ws://${ip}:${port}`;
+    this.logger.log(`[RobotConnection] Initiating ROS connection to ${rosUrl} for robot ${robotId}`);
+
+    return new Promise((resolve, reject) => {
       const ros = new ROSLIB.Ros({ url: rosUrl });
 
       ros.on('connection', () => {
-        this.logger.log(`Connected to robot ${robotId} at ${rosUrl}`);
+        this.logger.log(`[RobotConnection] Connected to ROS bridge at ${rosUrl}`);
 
         const connection: RobotConnection = {
           ros,
@@ -50,21 +54,24 @@ export class RobotConnectionService {
         const callback = this.connectionCallbacks.get(robotId);
         if (callback) callback('connected');
 
-        resolve(true);
+        resolve();
       });
 
       ros.on('error', (error) => {
-        this.logger.error(`Failed to connect to robot ${robotId}: ${error}`);
+        this.logger.error(`[RobotConnection] Error connecting to ROS bridge at ${rosUrl}:`, error);
 
         // Notify callback
         const callback = this.connectionCallbacks.get(robotId);
         if (callback) callback('error');
 
-        resolve(false);
+        // Only reject if we haven't successfully connected yet
+        if (!this.connections.has(robotId)) {
+          reject(error);
+        }
       });
 
       ros.on('close', () => {
-        this.logger.log(`Connection to robot ${robotId} closed`);
+        this.logger.log(`[RobotConnection] Connection to ROS bridge at ${rosUrl} closed`);
 
         const connection = this.connections.get(robotId);
         if (connection) {
@@ -109,15 +116,15 @@ export class RobotConnectionService {
       return;
     }
 
-    let cmdVelTopic = connection.topics.get('web/cmd_vel');
+    let cmdVelTopic = connection.topics.get('/cmd_vel');
 
     if (!cmdVelTopic) {
       cmdVelTopic = new ROSLIB.Topic({
         ros: connection.ros,
-        name: 'web/cmd_vel',
+        name: '/cmd_vel',
         messageType: 'geometry_msgs/Twist',
       });
-      connection.topics.set('web/cmd_vel', cmdVelTopic);
+      connection.topics.set('/cmd_vel', cmdVelTopic);
     }
 
     const twist = new ROSLIB.Message({
@@ -406,5 +413,54 @@ export class RobotConnectionService {
       `Published arm control for robot ${robotId}: id=${armCommand.id}, ` +
       `joints=[${armCommand.joints.join(', ')}], runTime=${armCommand.runTime}ms`,
     );
+  }
+
+  /**
+   * Subscribe to laser scan topic
+   */
+  subscribeToLaserScan(robotId: string, callback?: (scanData: any) => void): void {
+    const connection = this.connections.get(robotId);
+    if (!connection || !connection.isConnected) {
+      this.logger.warn(`Robot ${robotId} is not connected`);
+      return;
+    }
+
+    // Check if already subscribed
+    if (connection.topics.has('/scan')) {
+      this.logger.log(`Already subscribed to /scan topic for robot ${robotId}`);
+      return;
+    }
+
+    const scanTopic = new ROSLIB.Topic({
+      ros: connection.ros,
+      name: '/scan',
+      messageType: 'sensor_msgs/LaserScan',
+    });
+
+    scanTopic.subscribe((message: any) => {
+      connection.lastSeen = new Date();
+
+      // Relay scan data via callback
+      if (callback) {
+        callback(message);
+      }
+    });
+
+    connection.topics.set('/scan', scanTopic);
+    this.logger.log(`Subscribed to /scan topic for robot ${robotId}`);
+  }
+
+  /**
+   * Unsubscribe from laser scan topic
+   */
+  unsubscribeFromLaserScan(robotId: string): void {
+    this.unsubscribeFromTopic(robotId, '/scan');
+    this.logger.log(`Unsubscribed from /scan topic for robot ${robotId}`);
+  }
+  /**
+   * Get ROS instance for a robot
+   */
+  getRosInstance(robotId: string): ROSLIB.Ros | undefined {
+    return this.connections.get(robotId)?.ros;
   }
 }

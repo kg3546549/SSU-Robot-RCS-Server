@@ -138,7 +138,7 @@ export class RobotsController {
   }
 
   @Get(':id/camera')
-  async getCameraStream(@Param('id') id: string, @Res() res: Response) {
+  async getCameraStream(@Param('id') id: string, @Query('topic') topic: string, @Res() res: Response) {
     const robot = await this.robotsService.findOne(id);
 
     if (!robot) {
@@ -146,8 +146,11 @@ export class RobotsController {
       return res.status(404).json({ success: false, message: 'Robot not found' });
     }
 
+    // Default to /camera/rgb/image_raw if no topic specified
+    const cameraTopic = topic || '/camera/rgb/image_raw';
+
     // web_video_server URL
-    const cameraUrl = `http://${robot.ipAddress}:8080/stream?topic=/usb_cam/image_raw`;
+    const cameraUrl = `http://${robot.ipAddress}:8080/stream?topic=${cameraTopic}`;
     // console.log('Attempting to connect to camera:', cameraUrl); // 로그 제거 - 너무 자주 발생
 
     try {

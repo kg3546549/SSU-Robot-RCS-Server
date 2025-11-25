@@ -457,6 +457,50 @@ export class RobotConnectionService {
     this.unsubscribeFromTopic(robotId, '/scan');
     this.logger.log(`Unsubscribed from /scan topic for robot ${robotId}`);
   }
+
+  /**
+   * Subscribe to map topic
+   */
+  subscribeToMap(robotId: string, callback?: (mapData: any) => void): void {
+    const connection = this.connections.get(robotId);
+    if (!connection || !connection.isConnected) {
+      this.logger.warn(`Robot ${robotId} is not connected`);
+      return;
+    }
+
+    // Check if already subscribed
+    if (connection.topics.has('/map')) {
+      this.logger.log(`Already subscribed to /map topic for robot ${robotId}`);
+      return;
+    }
+
+    const mapTopic = new ROSLIB.Topic({
+      ros: connection.ros,
+      name: '/map',
+      messageType: 'nav_msgs/OccupancyGrid',
+    });
+
+    mapTopic.subscribe((message: any) => {
+      connection.lastSeen = new Date();
+
+      // Relay map data via callback
+      if (callback) {
+        callback(message);
+      }
+    });
+
+    connection.topics.set('/map', mapTopic);
+    this.logger.log(`Subscribed to /map topic for robot ${robotId}`);
+  }
+
+  /**
+   * Unsubscribe from map topic
+   */
+  unsubscribeFromMap(robotId: string): void {
+    this.unsubscribeFromTopic(robotId, '/map');
+    this.logger.log(`Unsubscribed from /map topic for robot ${robotId}`);
+  }
+
   /**
    * Get ROS instance for a robot
    */

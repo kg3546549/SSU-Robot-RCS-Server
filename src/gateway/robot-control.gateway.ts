@@ -160,6 +160,16 @@ export class RobotControlGateway implements OnGatewayConnection, OnGatewayDiscon
         });
       });
 
+      // Subscribe to map
+      this.robotConnectionService.subscribeToMap(robotId, (mapData) => {
+        // Relay map data to all clients
+        this.server.emit('robot:mapData', {
+          robotId,
+          map: mapData,
+          timestamp: new Date().toISOString(),
+        });
+      });
+
       // Get current arm angles
       try {
         const currentAngles = await this.robotConnectionService.getCurrentArmAngles(robotId);

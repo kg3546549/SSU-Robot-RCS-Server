@@ -14,9 +14,15 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
     JwtModule.registerAsync({
       imports: [ConfigModule],
       useFactory: (configService: ConfigService) => {
+        const secret = configService.get<string>('JWT_SECRET');
+        if (!secret) {
+          throw new Error(
+            'JWT_SECRET is not defined in environment variables. Please set JWT_SECRET in your .env file.',
+          );
+        }
         const expiresIn = configService.get<string>('JWT_EXPIRATION') || '1h';
         return {
-          secret: configService.get<string>('JWT_SECRET') || 'fallback-secret-key',
+          secret,
           signOptions: {
             expiresIn: expiresIn as any,
           },

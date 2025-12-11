@@ -23,8 +23,12 @@ export class UsersService {
       const createdUser = new this.userModel({
         username: createUserDto.username,
         password_hash: hashedPassword,
+        nickname: createUserDto.nickname,
       });
-      return createdUser.save();
+      const saved = await createdUser.save();
+      const userObject = saved.toObject();
+      delete userObject.password_hash; // never leak password hash to clients
+      return userObject as any;
     } catch (error) {
       // Handle any database errors
       if (error.code === 11000) {
@@ -34,7 +38,12 @@ export class UsersService {
     }
   }
 
-  async findOne(username: string): Promise<User | undefined> {
+  async checkUsername(username: string): Promise<boolean> {
+    const user = await this.userModel.findOne({ username }).exec();
+    return !!user; // true if exists, false if available
+  }
+
+  async findOne(username: string): Promise<UserDocument | null> {
     return this.userModel.findOne({ username }).exec();
   }
 }

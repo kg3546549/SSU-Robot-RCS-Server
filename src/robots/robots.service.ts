@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
+import * as mongoose from 'mongoose';
 import { Robot } from './entities/robot.entity';
 import { Robot as RobotSchema, RobotDocument } from './schemas/robot.schema';
 import { CreateRobotDto } from './dto/create-robot.dto';
@@ -75,37 +76,49 @@ export class RobotsService {
     }
   }
 
-  async findAll(): Promise<Robot[]> {
-    const robots = await this.robotModel.find().exec();
+  async findAll(userId?: string): Promise<Robot[]> {
+    const filter = userId ? { owner: new mongoose.Types.ObjectId(userId) } : {};
+    const robots = await this.robotModel.find(filter).exec();
     return robots.map(robot => robot.toObject() as Robot);
   }
 
-  async findOne(id: string): Promise<Robot> {
-    const robot = await this.robotModel.findOne({ id }).exec();
+  async findOne(id: string, userId?: string): Promise<Robot> {
+    const filter: any = { id };
+    if (userId) {
+      filter.owner = new mongoose.Types.ObjectId(userId);
+    }
+
+    const robot = await this.robotModel.findOne(filter).exec();
     if (!robot) {
       throw new NotFoundException(`Robot with ID ${id} not found`);
     }
     return robot.toObject() as Robot;
   }
 
-  async create(createRobotDto: CreateRobotDto): Promise<Robot> {
+  async create(createRobotDto: CreateRobotDto, userId?: string): Promise<Robot> {
     const newRobot = new this.robotModel({
       id: uuidv4(),
       ...createRobotDto,
       status: 'offline',
       lastSeen: new Date(),
       capabilities: createRobotDto.capabilities || [],
-      metadata: createRobotDto.metadata || {}
+      metadata: createRobotDto.metadata || {},
+      owner: userId ? new mongoose.Types.ObjectId(userId) : undefined,
     });
 
     const savedRobot = await newRobot.save();
     return savedRobot.toObject() as Robot;
   }
 
-  async update(id: string, updateRobotDto: UpdateRobotDto): Promise<Robot> {
+  async update(id: string, updateRobotDto: UpdateRobotDto, userId?: string): Promise<Robot> {
+    const filter: any = { id };
+    if (userId) {
+      filter.owner = new mongoose.Types.ObjectId(userId);
+    }
+
     const updatedRobot = await this.robotModel
       .findOneAndUpdate(
-        { id },
+        filter,
         { ...updateRobotDto, lastSeen: new Date() },
         { new: true }
       )
@@ -118,17 +131,27 @@ export class RobotsService {
     return updatedRobot.toObject() as Robot;
   }
 
-  async remove(id: string): Promise<void> {
-    const result = await this.robotModel.deleteOne({ id }).exec();
+  async remove(id: string, userId?: string): Promise<void> {
+    const filter: any = { id };
+    if (userId) {
+      filter.owner = new mongoose.Types.ObjectId(userId);
+    }
+
+    const result = await this.robotModel.deleteOne(filter).exec();
     if (result.deletedCount === 0) {
       throw new NotFoundException(`Robot with ID ${id} not found`);
     }
   }
 
-  async updateStatus(id: string, status: 'online' | 'offline' | 'error'): Promise<Robot> {
+  async updateStatus(id: string, status: 'online' | 'offline' | 'error', userId?: string): Promise<Robot> {
+    const filter: any = { id };
+    if (userId) {
+      filter.owner = new mongoose.Types.ObjectId(userId);
+    }
+
     const updatedRobot = await this.robotModel
       .findOneAndUpdate(
-        { id },
+        filter,
         { status, lastSeen: new Date() },
         { new: true }
       )
@@ -141,22 +164,33 @@ export class RobotsService {
     return updatedRobot.toObject() as Robot;
   }
 
-  async getOnlineRobots(): Promise<Robot[]> {
-    const robots = await this.robotModel.find({ status: 'online' }).exec();
+  async getOnlineRobots(userId?: string): Promise<Robot[]> {
+    const filter: any = { status: 'online' };
+    if (userId) {
+      filter.owner = new mongoose.Types.ObjectId(userId);
+    }
+    const robots = await this.robotModel.find(filter).exec();
     return robots.map(robot => robot.toObject() as Robot);
   }
 
-  async getRobotsByType(type: string): Promise<Robot[]> {
-    const robots = await this.robotModel
-      .find({ type: { $regex: type, $options: 'i' } })
-      .exec();
+  async getRobotsByType(type: string, userId?: string): Promise<Robot[]> {
+    const filter: any = { type: { $regex: type, $options: 'i' } };
+    if (userId) {
+      filter.owner = new mongoose.Types.ObjectId(userId);
+    }
+    const robots = await this.robotModel.find(filter).exec();
     return robots.map(robot => robot.toObject() as Robot);
   }
 
-  async updateBatteryVoltage(id: string, voltage: number): Promise<Robot> {
+  async updateBatteryVoltage(id: string, voltage: number, userId?: string): Promise<Robot> {
+    const filter: any = { id };
+    if (userId) {
+      filter.owner = new mongoose.Types.ObjectId(userId);
+    }
+
     const updatedRobot = await this.robotModel
       .findOneAndUpdate(
-        { id },
+        filter,
         { batteryVoltage: voltage, lastSeen: new Date() },
         { new: true }
       )

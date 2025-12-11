@@ -11,24 +11,29 @@ import {
   Query,
   Put,
   Res,
-  StreamableFile
+  StreamableFile,
+  UseGuards,
+  Request
 } from '@nestjs/common';
 import { Response } from 'express';
 import axios from 'axios';
 import { RobotsService } from './robots.service';
 import { CreateRobotDto } from './dto/create-robot.dto';
 import { UpdateRobotDto } from './dto/update-robot.dto';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 
 @Controller('robots')
+@UseGuards(JwtAuthGuard)
 export class RobotsController {
   constructor(private readonly robotsService: RobotsService) {}
 
   @Get()
-  async findAll(@Query('type') type?: string, @Query('status') status?: 'online' | 'offline' | 'error') {
-    let robots = await this.robotsService.findAll();
+  async findAll(@Request() req, @Query('type') type?: string, @Query('status') status?: 'online' | 'offline' | 'error') {
+    const userId = req.user.userId;
+    let robots = await this.robotsService.findAll(userId);
 
     if (type) {
-      robots = await this.robotsService.getRobotsByType(type);
+      robots = await this.robotsService.getRobotsByType(type, userId);
     }
 
     if (status) {
@@ -43,8 +48,9 @@ export class RobotsController {
   }
 
   @Get('online')
-  async getOnlineRobots() {
-    const robots = await this.robotsService.getOnlineRobots();
+  async getOnlineRobots(@Request() req) {
+    const userId = req.user.userId;
+    const robots = await this.robotsService.getOnlineRobots(userId);
     return {
       success: true,
       data: robots,
@@ -53,8 +59,9 @@ export class RobotsController {
   }
 
   @Get(':id')
-  async findOne(@Param('id') id: string) {
-    const robot = await this.robotsService.findOne(id);
+  async findOne(@Request() req, @Param('id') id: string) {
+    const userId = req.user.userId;
+    const robot = await this.robotsService.findOne(id, userId);
     return {
       success: true,
       data: robot
@@ -63,8 +70,9 @@ export class RobotsController {
 
   @Post()
   @HttpCode(HttpStatus.CREATED)
-  async create(@Body() createRobotDto: CreateRobotDto) {
-    const robot = await this.robotsService.create(createRobotDto);
+  async create(@Request() req, @Body() createRobotDto: CreateRobotDto) {
+    const userId = req.user.userId;
+    const robot = await this.robotsService.create(createRobotDto, userId);
     return {
       success: true,
       data: robot,
@@ -73,8 +81,9 @@ export class RobotsController {
   }
 
   @Patch(':id')
-  async update(@Param('id') id: string, @Body() updateRobotDto: UpdateRobotDto) {
-    const robot = await this.robotsService.update(id, updateRobotDto);
+  async update(@Request() req, @Param('id') id: string, @Body() updateRobotDto: UpdateRobotDto) {
+    const userId = req.user.userId;
+    const robot = await this.robotsService.update(id, updateRobotDto, userId);
     return {
       success: true,
       data: robot,
@@ -84,10 +93,12 @@ export class RobotsController {
 
   @Put(':id/status')
   async updateStatus(
+    @Request() req,
     @Param('id') id: string,
     @Body() body: { status: 'online' | 'offline' | 'error' }
   ) {
-    const robot = await this.robotsService.updateStatus(id, body.status);
+    const userId = req.user.userId;
+    const robot = await this.robotsService.updateStatus(id, body.status, userId);
     return {
       success: true,
       data: robot,
@@ -96,8 +107,9 @@ export class RobotsController {
   }
 
   @Delete(':id')
-  async remove(@Param('id') id: string) {
-    await this.robotsService.remove(id);
+  async remove(@Request() req, @Param('id') id: string) {
+    const userId = req.user.userId;
+    await this.robotsService.remove(id, userId);
     return {
       success: true,
       message: 'Robot deleted successfully'
@@ -105,8 +117,9 @@ export class RobotsController {
   }
 
   @Get(':id/health')
-  async getHealthCheck(@Param('id') id: string) {
-    const robot = await this.robotsService.findOne(id);
+  async getHealthCheck(@Request() req, @Param('id') id: string) {
+    const userId = req.user.userId;
+    const robot = await this.robotsService.findOne(id, userId);
     const isHealthy = robot.status === 'online' &&
                      (new Date().getTime() - robot.lastSeen.getTime()) < 60000;
 
@@ -123,8 +136,9 @@ export class RobotsController {
   }
 
   @Get(':id/camera/test')
-  async testCameraUrl(@Param('id') id: string) {
-    const robot = await this.robotsService.findOne(id);
+  async testCameraUrl(@Request() req, @Param('id') id: string) {
+    const userId = req.user.userId;
+    const robot = await this.robotsService.findOne(id, userId);
     if (!robot) {
       return { success: false, message: 'Robot not found' };
     }
@@ -138,8 +152,9 @@ export class RobotsController {
   }
 
   @Get(':id/camera')
-  async getCameraStream(@Param('id') id: string, @Query('topic') topic: string, @Res() res: Response) {
-    const robot = await this.robotsService.findOne(id);
+  async getCameraStream(@Request() req, @Param('id') id: string, @Query('topic') topic: string, @Res() res: Response) {
+    const userId = req.user.userId;
+    const robot = await this.robotsService.findOne(id, userId);
 
     if (!robot) {
       console.log('Robot not found:', id);

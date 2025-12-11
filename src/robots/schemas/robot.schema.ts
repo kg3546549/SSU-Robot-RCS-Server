@@ -1,5 +1,6 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document } from 'mongoose';
+import * as mongoose from 'mongoose';
 
 export type RobotDocument = Robot & Document;
 
@@ -61,6 +62,9 @@ export class Robot {
 
   @Prop({ type: Number, default: 0 })
   batteryVoltage?: number;
+
+  @Prop({ type: mongoose.Schema.Types.ObjectId, ref: 'User', required: false })
+  owner?: mongoose.Types.ObjectId;
 }
 
 export const RobotSchema = SchemaFactory.createForClass(Robot);

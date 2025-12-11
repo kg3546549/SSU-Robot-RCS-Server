@@ -1,4 +1,4 @@
-import { Controller, Post, Body, UnauthorizedException, HttpCode, HttpStatus } from '@nestjs/common';
+import { Controller, Post, Body, UnauthorizedException, HttpCode, HttpStatus, Get, Query } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { LoginDto } from './dto/login.dto';
 import { CreateUserDto } from '../users/dto/create-user.dto';
@@ -24,6 +24,16 @@ export class AuthController {
   @HttpCode(HttpStatus.CREATED)
   async register(@Body() createUserDto: CreateUserDto) {
     return this.authService.register(createUserDto);
+  }
+
+  @Get('check-username')
+  @HttpCode(HttpStatus.OK)
+  async checkUsername(@Query('username') username: string) {
+    const exists = await this.authService.checkUsername(username);
+    return {
+      exists,
+      available: !exists,
+    };
   }
 
   @Post('logout')
